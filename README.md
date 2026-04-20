@@ -1,3 +1,5 @@
+<p align="center"><img src="banner.png" width="620" height="413" alt="en2karp"></p>
+
 # en2karp-catalog
 
 **Pipeline 01** of the en2karp family — a three-part research project exploring
