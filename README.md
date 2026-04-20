@@ -26,7 +26,7 @@ Evernote account
 Pipeline 01 (this repo) ─→  Obsidian vault + catalog.db (SQLite)
     │
     ├── catalog.json + metadata.json ─→ en2karp-webapp-template (Pipeline 03)
-    └── used by ──────────────────────→ en2karp-wiki             (Pipeline 02)
+    └── used by ──────────────────────→ en2karp-wiki            (Pipeline 02)
 ```
 
 ## Background
