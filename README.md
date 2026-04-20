@@ -2,11 +2,14 @@
 
 # en2karp-catalog
 
-**Pipeline 01** of the en2karp family — a three-part research project exploring
-LLM-maintained personal wikis in the style of Andrej Karpathy's
+**Pipeline 01** of the **en2karp** workflow — a three-part setup for
+LLM-maintained personal wikis, inspired by Andrej Karpathy's
 [gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
+It came out of exploring what Claude Code can do to support novel,
+interesting modes of personal information management — while also
+escaping the fangs of Bending Spoons / Evernote.
 
-This skill handles the *catalog* layer: it migrates an Evernote account into
+This skill is the *catalog* layer: it migrates an Evernote account into
 an Obsidian vault, builds a SQLite index over every note (frontmatter, inline
 tags, image references, OCR text), and exports the catalog as JSON for
 downstream consumers.
@@ -26,15 +29,15 @@ Pipeline 01 (this repo) ─→  Obsidian vault + catalog.db (SQLite)
     └── used by ──────────────────────→ en2karp-wiki             (Pipeline 02)
 ```
 
-## Research motivation
+## Background
 
-Karpathy's gist proposes a three-layer model:
+Karpathy's gist sketches a three-layer model:
 
 1. **Raw sources** — immutable input documents the LLM reads but never edits.
 2. **The wiki** — LLM-owned markdown (summaries, entity pages, overviews).
 3. **The schema** — a config doc specifying wiki structure.
 
-The en2karp family specializes this model for Evernote: the **catalog** is the
+en2karp specializes this model for Evernote: the **catalog** is the
 structured index over the raw sources — not the wiki itself, but the
 substrate a wiki builder (Pipeline 02) or a browsing UI (Pipeline 03) can
 query. Splitting "index the corpus" from "synthesize the wiki" keeps each
