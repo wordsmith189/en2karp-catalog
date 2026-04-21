@@ -215,6 +215,31 @@ def get_note(conn: sqlite3.Connection, note_id: str) -> sqlite3.Row | None:
     ).fetchone()
 
 
+def get_notes_by_ids(
+    conn: sqlite3.Connection, note_ids: list[str], *, exclude_deleted: bool = True
+) -> list[sqlite3.Row]:
+    """Fetch notes by id in one query, preserving the input order.
+
+    Missing ids are silently dropped; deleted ids are dropped unless
+    `exclude_deleted=False`. SQLite's parameter limit (999 by default)
+    is respected by chunking.
+    """
+    if not note_ids:
+        return []
+    found: dict[str, sqlite3.Row] = {}
+    chunk_size = 900
+    for start in range(0, len(note_ids), chunk_size):
+        chunk = note_ids[start : start + chunk_size]
+        placeholders = ",".join("?" * len(chunk))
+        clauses = [f"note_id IN ({placeholders})"]
+        if exclude_deleted:
+            clauses.append("wiki_status != 'deleted'")
+        sql = f"SELECT * FROM notes WHERE {' AND '.join(clauses)}"
+        for row in conn.execute(sql, chunk):
+            found[row["note_id"]] = row
+    return [found[nid] for nid in note_ids if nid in found]
+
+
 def all_note_ids(conn: sqlite3.Connection) -> set[str]:
     rows = conn.execute(
         "SELECT note_id FROM notes WHERE wiki_status != 'deleted'"
@@ -261,7 +286,7 @@ def export_catalog_json(conn: sqlite3.Connection, output_path: str | Path) -> in
     rows = conn.execute(
         """
         SELECT note_id, title, folder, tags, created_date, modified_date,
-               word_count, source_url, image_count, has_ocr, wiki_status
+               word_count, source_url, file_path, image_count, has_ocr, wiki_status
         FROM notes
         WHERE wiki_status != 'deleted'
         ORDER BY modified_date DESC
@@ -279,6 +304,7 @@ def export_catalog_json(conn: sqlite3.Connection, output_path: str | Path) -> in
                 "modified_date": row["modified_date"],
                 "word_count": row["word_count"],
                 "source_url": row["source_url"],
+                "file_path": row["file_path"],
                 "image_count": row["image_count"],
                 "has_ocr": bool(row["has_ocr"]),
                 "wiki_status": row["wiki_status"],
