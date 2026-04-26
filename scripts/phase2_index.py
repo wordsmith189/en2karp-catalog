@@ -56,43 +56,29 @@ def _run_ocr(image_path: Path, engine: str) -> tuple[str, dict]:
 
 
 def _run_apple_vision(image_path: Path) -> tuple[str, dict]:
-    import subprocess
-
-    script = (
-        'use framework "Vision"\n'
-        'use framework "Foundation"\n'
-        'on run argv\n'
-        '  set imgPath to item 1 of argv\n'
-        '  set nsURL to current application\'s |NSURL|\'s fileURLWithPath:imgPath\n'
-        '  set req to current application\'s VNRecognizeTextRequest\'s alloc()\'s init()\n'
-        '  req\'s setRecognitionLevel:(current application\'s VNRequestTextRecognitionLevelAccurate)\n'
-        '  set handler to current application\'s VNImageRequestHandler\'s alloc()\'s initWithURL:nsURL options:(current application\'s NSDictionary\'s dictionary())\n'
-        '  handler\'s performRequests:{req} |error|:(missing value)\n'
-        '  set results to req\'s results()\n'
-        '  set outText to ""\n'
-        '  repeat with obs in results\n'
-        '    set top to (obs\'s topCandidates:1)\n'
-        '    if (count of top) > 0 then\n'
-        '      set outText to outText & ((item 1 of top)\'s |string|() as string) & linefeed\n'
-        '    end if\n'
-        '  end repeat\n'
-        '  return outText\n'
-        'end run\n'
-    )
     try:
-        result = subprocess.run(
-            ["osascript", "-l", "AppleScript", "-e", script, str(image_path)],
-            capture_output=True,
-            text=True,
-            timeout=30,
+        from Foundation import NSURL, NSDictionary
+        import Vision as _Vision
+
+        url = NSURL.fileURLWithPath_(str(image_path))
+        request = _Vision.VNRecognizeTextRequest.alloc().init()
+        request.setRecognitionLevel_(_Vision.VNRequestTextRecognitionLevelAccurate)
+        handler = _Vision.VNImageRequestHandler.alloc().initWithURL_options_(
+            url, NSDictionary.dictionary()
         )
-        if result.returncode != 0:
-            stderr = (result.stderr or "osascript failed").strip()
-            print(f"warn: apple_vision failed on {image_path.name}: {stderr[:200]}",
+        success, error = handler.performRequests_error_([request], None)
+        if not success:
+            err_str = str(error) if error else "unknown error"
+            print(f"warn: apple_vision failed on {image_path.name}: {err_str[:200]}",
                   file=sys.stderr)
             return "", {"was_skipped": 1, "skip_reason": "ocr_failed"}
-        return result.stdout.strip(), {"was_skipped": 0}
-    except Exception as exc:  # pragma: no cover - hardware-dependent
+        parts = []
+        for obs in (request.results() or []):
+            candidates = obs.topCandidates_(1)
+            if candidates:
+                parts.append(str(candidates[0].string()))
+        return "\n".join(parts), {"was_skipped": 0}
+    except Exception as exc:
         print(f"warn: apple_vision error on {image_path.name}: {exc}", file=sys.stderr)
         return "", {"was_skipped": 1, "skip_reason": "ocr_failed"}
 
@@ -155,9 +141,7 @@ def _index_image_at_path(
     }
 
     if engine == "none":
-        record.update(was_skipped=1, skip_reason="ocr_disabled")
-        catalog.upsert_ocr(conn, record)
-        return True, False
+        return False, False  # don't touch image_ocr table — no stub rows
 
     if resolved.suffix.lower() not in vault.OCR_SUPPORTED_EXTENSIONS:
         record.update(was_skipped=1, skip_reason="unsupported_type")

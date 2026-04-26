@@ -33,13 +33,15 @@ if arguments are omitted. Each can be run standalone with `python3`.
 | Tool | Check | Install |
 |---|---|---|
 | Python 3.10+ | `python3 --version` | comes with macOS / Homebrew |
-| Pillow (image dimensions for OCR filter) | `python3 -c "import PIL"` | `pip install pillow` |
+| Pillow (image dimensions for OCR filter) | `python3 -c "import PIL"` | `pip install Pillow --break-system-packages` |
+| pyobjc-framework-Vision (Apple Vision OCR) | `python3 -c "import Vision"` | `pip install pyobjc-framework-Vision --break-system-packages` |
 | evernote-backup (Phase 1 only) | `evernote-backup --version` | `pipx install evernote-backup` |
 | yarle (Phase 1 only) | `yarle --version` | `npm install -g yarle-evernote-to-md` |
 | tesseract (optional OCR fallback) | `tesseract --version` | `brew install tesseract` |
 
-Apple Vision OCR (the macOS default) needs no install — it ships with the OS
-and is invoked via `osascript`.
+Apple Vision OCR (the macOS default) is called via `pyobjc-framework-Vision`
+(direct Python bindings). The older `osascript` approach fails with "Access not
+allowed" when run from Terminal — do not use it.
 
 ## Config
 
@@ -69,13 +71,95 @@ Steps:
 1. `evernote-backup init-db` (interactive device-auth login, first time only).
 2. `evernote-backup sync` — resumable pull of all notebooks into SQLite.
 3. `evernote-backup export` — dump ENEX files (one per notebook, trash included).
-4. `yarle` — convert each `.enex` to Obsidian markdown in the target vault.
-5. `phase2_index` — build the initial `catalog.db`.
+4. **yarle** — convert `.enex` files to Obsidian markdown. yarle has a known
+   bug: `--configFile` and CLI `--enexSources` flags do not override the
+   bundled config. Use this three-step workaround:
+
+   **Step 4a** — Copy the sample template to `~/Desktop/` (required on startup):
+   ```bash
+   cp /opt/homebrew/lib/node_modules/yarle-evernote-to-md/sampleTemplate.tmpl ~/Desktop/
+   ```
+
+   **Step 4b** — Edit the bundled config at
+   `/opt/homebrew/lib/node_modules/yarle-evernote-to-md/config.json` and
+   replace its contents with (substituting `{username}`):
+   ```json
+   {
+       "enexSources": ["/Users/{username}/Desktop/enex-archive/"],
+       "outputDir": "/Users/{username}/Desktop/obsidian-vault/",
+       "keepOriginalHierarchy": true,
+       "putFrontMatterAtTop": true,
+       "keepOriginalHtml": false,
+       "isMetadataNeeded": false,
+       "plainTextNotesOnly": false,
+       "skipWebClips": false,
+       "skipTags": false,
+       "useHashTags": true,
+       "outputFormat": "ObsidianMD",
+       "taskOutputFormat": "ObsidianMD",
+       "imageSizeFormat": "ObsidianMD",
+       "keepImageSize": true,
+       "resourcesDir": "_resources",
+       "replacementChar": "_",
+       "nestedTags": {
+           "separatorInEN": "_",
+           "replaceSeparatorWith": "/",
+           "replaceSpaceWith": "-"
+       },
+       "dateFormat": "YYYY-MM-DD"
+   }
+   ```
+   Key settings that differ from yarle defaults: `skipWebClips: false` (default
+   is true — would skip all web clips), `resourcesDir: "_resources"` (default
+   is empty — attachments go missing), `nestedTags.replaceSeparatorWith: "/"`
+   (Obsidian nested tag style), `putFrontMatterAtTop: true` (required for
+   `phase2_index.py` to parse notes).
+
+   **Step 4c** — Run from `~/Desktop`, passing any real notebook subdirectory
+   as `--enexSources` to unlock processing of the whole archive:
+   ```bash
+   cd ~/Desktop
+   yarle --enexSources /Users/{username}/Desktop/enex-archive/{any-notebook-name}/
+   ```
+   The specific notebook path does not limit output — yarle processes all
+   notebooks defined in the config.
+
+   > ⚠️ **yarle wraps output in a `notes/` subdirectory.** Your notes live at
+   > `obsidian-vault/notes/{Notebook}/`, not `obsidian-vault/{Notebook}/`.
+   > All downstream steps — the config file, the indexer, Obsidian itself — must
+   > point to `obsidian-vault/notes/` as the vault root, not `obsidian-vault/`.
+
+5. `phase2_index` — build the initial `catalog.db` (see Phase 2 below).
 
 Warn the user that step 1 opens a browser for Evernote login and the full
 sync can take 10+ minutes on a large account.
 
 ## Phase 2 — Incremental reindex (`phase2_index.py`)
+
+Before the first run, create the config file if it does not already exist:
+
+```bash
+mkdir -p ~/.config/en2karp
+cat > ~/.config/en2karp/config.json << 'EOF'
+{
+  "vault_path": "~/Desktop/obsidian-vault/notes",
+  "catalog_path": "~/Library/Application Support/en2karp/catalog.db",
+  "webapp_path": "~/repos/en2karp-webapp-template",
+  "ocr_engine": "apple_vision"
+}
+EOF
+```
+
+The indexer reads this config on startup. Without it the script will error or
+use wrong default paths. `catalog_path` is set to `~/Library/Application
+Support/` deliberately — this keeps the database out of iCloud sync. Adjust
+`webapp_path` to the actual Pipeline 03 repo location.
+
+> **Do not run `--ocr-engine none` as a preliminary pass** if you intend to
+> run OCR afterward. Doing so writes stub rows to the `image_ocr` cache that
+> block real OCR on all subsequent runs. Run with `--ocr-engine apple_vision`
+> directly. If you need a fast structural index first, omit `--sweep-resources`
+> on the first pass rather than disabling OCR.
 
 ```
 python3 scripts/phase2_index.py [--vault PATH] [--catalog PATH] \
